@@ -1,0 +1,318 @@
+---
+title: "Walmart Analysis - Group 10"
+author: "Aashna Rungta, Sneha Batchu, Sony Kumari, Udisha Madnani"
+date: "March 7, 2022"
+output:
+  html_document: default
+  header-includes: \usepackage{color}
+  pdf_document: default
+fontsize: 12pt
+margin: 1in
+---
+
+```{r setup, echo=FALSE, message=F, warning=F}
+
+# Clear the working space
+rm(list = ls())
+
+#Set working directory
+setwd("//Users/snehabatchu/Documents/SCU_MSBA/Winter\ 22/MKTG2505\ Marketing\ Analytics/Final\ Project")
+#getwd()
+
+### Load the packages (all must have been installed)
+    library(doBy)
+    library(dplyr)
+    library(foreign)
+    library(ggplot2)
+    library(knitr)
+    library(lmtest)
+    library(readstata13)
+    library(sandwich)
+    library(stargazer)
+    library(AER)
+    library(gdata)
+    library(wooldridge)
+    library(openintro)
+    library(tidyr)
+    library(tidyverse)
+    library(lubridate)
+
+cse=function(reg) {
+    rob=sqrt(diag(vcovHC(reg, type="HC1")))
+    return(rob)
+}
+
+```
+
+```{r data, echo=FALSE, message=F, warning=FALSE, include=FALSE}
+
+### Data section: loading data
+wmart=read.csv("Walmart.csv", header=T, sep=",")
+summary(wmart)
+sum(is.na(wmart))
+wmart = as.data.frame(wmart)
+View(wmart)
+
+wmart$DateNew <- parse_date_time(wmart$Date, orders = c("ymd", "dmy", "mdy"))
+wmart<-wmart%>%
+  mutate(Date1=dmy(Date))
+
+```
+
+### **Exploratory Data Analysis**  
+
+```{r eda1, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+store_num <- wmart %>% group_by(Store) %>% summarize(meansales = mean(Weekly_Sales))
+ggplot(store_num,aes(x=Store,y=meansales)) +geom_col()+coord_flip()+geom_col(fill="dark grey") +xlab("Store Name")+ylab("Weekly Sales Mean")
+
+wmart%>%
+  ggplot(aes(Weekly_Sales, reorder(as_factor(Store),
+                                   FUN = median, Weekly_Sales)))+
+  geom_boxplot()+
+  labs(title = 'Regional Store vs Sales Distribution',
+       x='Weekly sales',
+       y='Store')+
+  theme_bw()
+
+```
+
+This is the distribution of average weekly sales for each store over the span of 3 years.  
+
+```{r eda2, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+wmart%>%
+  ggplot(aes(Temperature))+
+  geom_histogram(bins=100)+
+  labs(title = 'Temperature Distribution',
+       y='Weekly sales',
+       x='Temperature')+
+  theme_bw()
+
+wmart%>%
+  ggplot(aes(Temperature, Weekly_Sales))+
+  geom_point(alpha =1/10)+
+  labs(title = 'Temperature against Weekly Sales',
+       y='Weekly sales',
+       x='Temperature')+
+  theme_bw()
+```
+
+Insights:    
+1. On average, sales are higher with high temperatures.    
+2. There are more people to shop in low temperatures.    
+
+```{r eda3, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+wmart$month<- strftime(wmart$Date, "%m")
+ggplot(wmart,aes(x=month,y=Weekly_Sales)) +geom_col(fill="light blue")+xlab("Month")+ylab("Weekly Sales")
+
+wmart$year<- strftime(wmart$DateNew, "%Y")
+ggplot(wmart,aes(x=year,y=Weekly_Sales)) +geom_col(fill="light blue")+xlab("Year")+ylab("Weekly Sales")
+
+```
+
+Insights:  
+1. Low sales were observed in January and November.  
+2. The average weekly sales in other months do not vary much because Walmart offers clearance discount on the first five days of every month.  
+3. There has been a significant drop in the average weekly sale from 2011 to 2012.  
+
+```{r eda4, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+wmart%>%
+  group_by(Date1)%>%
+  summarise(Weekly_Sales = mean(Weekly_Sales, na.rm=T))%>%
+  ggplot(aes(Date1, Weekly_Sales))+
+  geom_point(aes(color=Weekly_Sales>1200000), show.legend = F)+
+  geom_line(color='grey')+
+  labs(title = 'Weekly Sales Distribution',
+       y='Weekly sales',
+       x='Date')+
+  theme_bw()
+
+holiday<-function(x){
+  cut(x,
+      breaks = ymd(20100212, 20100213, 20100910, 20100911, 20101126, 20101127, 20101231, 20110101,
+                   20110211, 20110212, 20110911, 20110912, 20111125, 20111126, 20111230, 20111231,
+                   20120210, 20120211, 20120907, 20120908, 20121123, 20121124, 20121228, 20121229,
+                   20130208, 20130209, 20130906, 20130907, 20131129, 20131130, 20131227, 20131228),
+      labels = c('Super Bowl', 'Normal Day' ,'Labour Day', 'Normal Day', 'Thanksgiving', 'Normal Day', 'Christmas', 'Normal Day',
+                 'Super Bowl', 'Normal Day', 'Labour Day', 'Normal Day', 'Thanksgiving', 'Normal Day', 'Christmas', 'Normal Day',
+                 'Super Bowl', 'Normal Day' ,'Labour Day', 'Normal Day', 'Thanksgiving', 'Normal Day', 'Christmas', 'Normal Day',
+                 'Super Bowl', 'Normal Day' ,'Labour Day', 'Normal Day', 'Thanksgiving', 'Normal Day', 'Christmas'))
+}
+
+wmart<-wmart%>%
+  mutate(festival = holiday(Date1))
+
+wmart%>%
+  group_by(Date1)%>%
+  mutate(Weekly_Sales = mean(Weekly_Sales, na.rm=T))%>%
+  ggplot(aes(Date1, Weekly_Sales))+
+  geom_point(aes(color = festival, 
+                 shape = festival),size = 2)+
+  geom_line(group=1, color='grey')+
+  labs(title = 'Weekly Sales Distribution around Festivals',
+       y='Weekly sales',
+       x='Date')+
+  theme_bw()
+
+```
+
+Insights:  
+1. Some weeks have extreme high weekly sales.  
+2. Thanksgiving have extreme high weekly sales.  
+3. It usually reaches a sales peak a week before Christmas.  
+4. Labor day, Super bowl does not cause extremely high sales.  
+
+```{r eda5, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+wmart%>%
+  ggplot(aes(as_factor(Holiday_Flag), Weekly_Sales))+
+  geom_boxplot()+
+  labs(title = 'Holiday Flag',
+       y='Weekly sales',
+       x='Holiday Flag')+
+  theme_bw()
+
+```
+
+Insights: There seems no significant difference in weekly sales during holiday and non-holiday weeks. However, there are extreme values in Non-holiday week.  
+
+```{r eda6, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+sale_emp = wmart %>% group_by(Unemployment) %>% summarise(count=n(), meanprice=mean(Weekly_Sales))
+ggplot(sale_emp, aes(x=reorder(Unemployment,-count),y=count))+geom_col(fill="dark blue")+labs(title="Sales respect to Employment status", y="Weekly Sales", x="Unemployment")
+
+```
+
+Insight: Weekly sales is negatively correlated with unemployment, as expected.  
+
+```{r eda7, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+#ggplot(wmart,aes(x=CPI,y=Weekly_Sales)) +geom_col(fill="light blue")+xlab("Consumer Price Index")+ylab("Weekly Sales")
+
+wmart%>%
+  ggplot(aes(CPI))+
+  geom_histogram(bins=100)+
+  labs(title = 'CPI distribution',
+       y='Count',
+       x='CPI')+
+  theme_bw()
+
+wmart%>%
+  ggplot(aes(CPI, Weekly_Sales))+
+  geom_point(alpha =1/10)+
+  labs(title = 'CPI by Weekly Sales',
+       y='Weekly sales',
+       x='CPI')+
+  theme_bw()
+
+```
+
+Insights:
+1. There is a higher density of weekly sales around CPI range 125-150, 175-200, 200-225.  
+2. Different ranges of CPI have same sales distributions.  
+
+```{r eda8, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+options(repr.plot.width = 20, repr.plot.height = 20)
+ggplot(data = wmart)+
+  geom_smooth(mapping = aes(x = Temperature, y = Weekly_Sales), color = "red")+
+  labs(title = "Weekly Temperature and Weekly Sales", x = "Temperature in °F", y = "Sales")+
+  theme(axis.title.x = element_text(size = 20, color = "orange"), axis.title.y = element_text(size = 20, color = "orange"), text = element_text(size = 20), title = element_text(color = "darkblue", size = 15))
+
+```
+
+Insight: People prefer to shop when the temperature range is between 30°F and 80°F.  
+
+```{r eda9, echo=FALSE, message=F, warning=FALSE, comment=""}
+wmart%>%
+  ggplot(aes(Fuel_Price))+
+  geom_histogram(bins=50)+
+  labs(title = 'Fuel Price Distribution',
+       y='Count',
+       x='Fuel Price')+
+  theme_bw()
+
+wmart%>%
+  ggplot(aes(Fuel_Price, Weekly_Sales))+
+  geom_point(alpha =1/10)+
+  labs(title = 'Fuel Price by Weekly Sales',
+       y='Weekly sales',
+       x='Fuel Price')+
+  theme_bw()
+
+```
+
+Insight: Weekly Sales have distributions around two peaks of fuel prices, 2.5-3.0 and 3.5-4.0.  
+
+
+### **Predictive Regression Analysis**  
+
+```{r reg, echo=FALSE, message=F, warning=FALSE, comment=""}
+
+#Regression model
+m = lm(Weekly_Sales ~ Store+Temperature+festival+CPI+Unemployment+CPI*Unemployment+CPI*Fuel_Price, data=wmart)
+summary(m)
+
+# create two samples for training and validation
+set.seed(1)
+sample = sample.int(n=nrow(wmart),replace=FALSE, size=0.75*nrow(wmart))
+trainset = wmart[sample,]
+testset = wmart[-sample,]
+
+### Regression model
+train_model1=lm(Weekly_Sales ~ Store+Temperature+festival+CPI+Unemployment+CPI*Unemployment+CPI*Fuel_Price, wmart[sample,])
+
+stargazer(train_model1,title="Multilinear regression: train_model1", type="text",digits=3)
+p = predict(train_model1,newdata= wmart[-sample,]) 
+coef(train_model1) 
+
+#plot(actual_train,predicted_train) 
+
+# rmse for trainingset data
+actual_train = trainset$Weekly_Sales
+predicted_train = train_model1$fitted.values
+#trainset_df = data.frame(actual_train, predicted_train)
+rmse_train = sqrt(mean((trainset$Weekly_Sales - train_model1$fitted.values)^2))
+rmse_train
+
+# rmse for testset data
+actual_test = testset$Weekly_Sales
+predicted_test = p
+testset_df = data.frame(actual_test, predicted_test)
+rmse_test = sqrt(mean((testset_df$actual_test - testset_df$predicted_test)^2, na.rm = TRUE))
+rmse_test
+
+# Residuals
+mae <- function(error) { mean(abs(error)) }
+mae(m$residuals)
+
+
+```
+
+We have used Multi-linear Predictive Regression Analysis, in order to remove possible omitted variable bias, and use all the variables in the dataset and come up with a more accurate model. We felt using the multi - linear regression model was appropriate because we wanted to analyze the causal effect of different significant variables(Temperature, festival, CPI, Unemployment, and Fuel Prices) on average weekly sales of Walmart. Also, to magnify the significance of few variables, we have added interation terms in the regression model. Linear regression model was found as a suitable technique to study impact of various numeric independent variables on a numeric dependent variable, which is our variable of interest.    
+
+In our model, we regressed multiple independent variables on weekly sales, namely store number, temperature, festival, inflation rate, unemployment rate, and two interaction terms. This model allowed for us to use all the data at hand in order to predict any variability in the weekly sales. In particular, we wanted to use two interaction terms - CPI*unemployment and CPI*fuel price because those are variables that are closely related to each other - i.e. unemployment affects inflation rate and vice versa, and the fuel price is a large determinant of the inflation rate. The interaction terms ensured that we had dealt with the multicollinearity of the variables appropriately. 
+From our model, we found that the RMSE of the training set was 619,378.7 sales, as compared to the RMSE of the test set, which was 510,856.7 sales. While this may seem very high, we have to look at it relative to the average weekly sales, which is 1,082,071. Both the RMSE values are over 50% of the average weekly sales, indicating that the model is not very accurate in predicting weekly sales. 
+Additionally, the mean absolute error was 408376.8, which again is very high, especially compared to the average weekly sales (MAE is 37% of the average weekly sales). Again, this shows that the model could do better in predicting sales. However, we wanted to standardize the numbers and use a measure that better represents the fit. In order to do this, we calculated the R2, which was 0.2028. An R2 value of 0.2 shows that the model is not necessarily the best at predicting the weekly sales. One reason for this could be that the store number does not have any mathematical meaning, and that those numbers are randomly assigned. With all these three measurements in mind, it seems like the model gives the following results. However, we need to be mindful that the model is not highly accurate in predicting sales, and therefore consider obtaining additional data in order to make the data more accurate.  
+
+The stargazer table shows that during Thanksgiving, sales skyrocketed as seen in the coefficient of the Thanksgiving festival variable. It seems that other festivals did not have this effect on weekly sales. Unemployment has, predictably, a negative correlation with the weekly sales. This is seen in the negative coefficient of the unemployment variable, keeping all other variables constant. The two interaction terms do not have a significant effect on the sales either, with low coefficients. This might be due to the slow changing effect of unemployment, fuel price, and inflation rate - these are factors that do not have a very high variability on a week-to-week basis.  
+  
+
+### **Conclusion**    
+
+- During festivities, we always observe that there is huge rush at Walmart and our research from the data also backs the same hypothesis - Thanksgiving actually has extreme high weekly sales.  
+- Our research shows that the sales reaches a peak just a week before Christmas.  
+- Festivals like Labor day and Super bowl does not cause extremely high sales.  
+- Unemployment rate negatively affects the weekly sales - the lower the unemployment rate, the higher will be the weekly sales.  
+- Certain variables have little or no effect at all on the weekly sales, like - CPI and fuel price.  
+
+### **Recommendations**    
+
+There has been a significant drop in the average weekly sales from 2011 to 2012 as per the data analysis, thus, as per our primary and secondary research, we come to the following recommendations for Walmart-  
+- Cater to supply chain disruption issues like, transportation delays, etc and kick in automation for activities like inventory management, etc.  
+- Stores should restock shelves fast enough in order to avoid undue shrinkage and out-of-stocks.  
+- Digital services should be integrated more with the physical stores.  
+
